@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eye-pi 센서 대시보드</title>
+<style>
+:root{
+  --paper:#e8eee9; --panel:#f6f9f5; --ink:#14202a; --mute:#5b6a74; --line:#c3cec6; --grid:#cbd6cd;
+  --pcb:#0f5c45; --gold:#cfa84f; --blue:#1d5fd1; --ok:#1d8a58; --warn:#c97a12; --err:#c3372e;
+  --ax-x:#d6453d; --ax-y:#1f9d55; --ax-z:#2f6fe0;
+  --term:#0f151b; --term-ink:#cfe3d6; --term-mute:#7f93a0;
+  --sans:"Avenir Next","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,"D2Coding",monospace;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* 상단 바 */
+.top{display:flex;align-items:center;gap:20px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.id{display:flex;align-items:baseline;gap:10px;min-width:0}
+.id b{font-size:16px;letter-spacing:.01em}
+.id .sub{color:var(--mute)}
+.tag{padding:1px 8px;border-radius:4px;background:#f3dfb8;color:#6d4a07;font-size:12px}
+.facts{display:flex;flex-wrap:wrap;gap:4px 18px;color:var(--mute);margin-left:auto}
+.facts b{color:var(--ink);font-weight:500}
+.conn{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.conn i{width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.conn.live i{background:var(--ok);box-shadow:0 0 0 4px rgba(29,138,88,.16)}
+.conn.down i{background:var(--err)}
+
+/* 칩 */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:1px 9px;border-radius:999px;border:1px solid;font-size:12px;white-space:nowrap}
+.chip i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.ok{color:var(--ok);background:#e2f2e9;border-color:#b7dcc7}
+.chip.warn{color:var(--warn);background:#faedd8;border-color:#ecd0a1}
+.chip.err{color:var(--err);background:#f9e1de;border-color:#e9b8b3}
+.chip.idle{color:var(--mute);background:#e9eeea;border-color:var(--line)}
+
+/* 레이아웃 */
+main{display:grid;grid-template-columns:minmax(0,1fr) 400px;grid-template-areas:"stage side" "console console"}
+.stage{grid-area:stage;position:relative;min-height:580px;border-right:1px solid var(--line);overflow:hidden;
+  background-color:#f1f5f0;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:32px 32px;background-position:-1px -1px}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 52%,rgba(241,245,240,0) 38%,rgba(232,238,233,.92) 100%)}
+.side{grid-area:side;background:var(--panel);display:flex;flex-direction:column}
+.side>section{padding:16px 20px;border-bottom:1px solid var(--line)}
+.side h2,.console h2{margin:0;font-size:14px;font-weight:600}
+.side .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+
+/* 3D 화면 */
+.viewport{position:absolute;inset:0;z-index:1;perspective:1100px;perspective-origin:50% 38%;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.viewport:active{cursor:grabbing}
+.viewport.dim .cam{opacity:.38;filter:saturate(.4)}
+.cam{position:absolute;left:50%;top:55%;width:0;height:0;transform-style:preserve-3d;transition:opacity .25s,filter .25s}
+.ground{position:absolute;left:-320px;top:-320px;width:640px;height:640px;transform:translateY(112px) rotateX(90deg);
+  background-image:linear-gradient(rgba(20,32,42,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(20,32,42,.16) 1px,transparent 1px);
+  background-size:40px 40px;-webkit-mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.5) 45%,transparent 70%);mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.5) 45%,transparent 70%)}
+.board{position:absolute;left:0;top:0;width:0;height:0;transform-style:preserve-3d;will-change:transform}
+.face{position:absolute;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.f-top{left:-120px;top:-80px;width:240px;height:160px;transform:rotateX(90deg) translateZ(6px);
+  background:linear-gradient(155deg,#14765a 0%,#0d4f3b 100%);box-shadow:inset 0 0 0 3px #0a3f30,inset 0 0 22px rgba(0,0,0,.25)}
+.f-bottom{left:-120px;top:-80px;width:240px;height:160px;transform:rotateX(-90deg) translateZ(6px);background:#0a2f25;color:#6f9a8a;font-size:11px;display:grid;place-items:center}
+.f-front{left:-120px;top:-6px;width:240px;height:12px;transform:translateZ(80px);background:#0a3f30}
+.f-back{left:-120px;top:-6px;width:240px;height:12px;transform:rotateY(180deg) translateZ(80px);background:#0a3f30}
+.f-right{left:-80px;top:-6px;width:160px;height:12px;transform:rotateY(90deg) translateZ(120px);background:#0b4535}
+.f-left{left:-80px;top:-6px;width:160px;height:12px;transform:rotateY(-90deg) translateZ(120px);background:#0b4535}
+.f-top .ic{position:absolute;left:86px;top:50px;width:68px;height:58px;border-radius:3px;background:#171c21;box-shadow:0 0 0 2px #2c333a;display:grid;place-items:center;color:#9fb0bf;font:600 11px var(--mono);letter-spacing:.04em}
+.f-top .ic::before{content:"";position:absolute;left:6px;top:6px;width:6px;height:6px;border-radius:50%;background:#59666f}
+.f-top .pad{position:absolute;bottom:9px;width:13px;height:13px;border-radius:50%;background:var(--gold);box-shadow:inset 0 0 0 4px #7c6425}
+.f-top .hole{position:absolute;width:12px;height:12px;border-radius:50%;background:#e8eedf;box-shadow:inset 0 0 0 3px #0a3f30,0 0 0 2px var(--gold)}
+.f-top .fwd{position:absolute;top:9px;left:0;right:0;text-align:center;font-size:11px;font-weight:600;color:#f1d48a;letter-spacing:.06em}
+.f-top .sx,.f-top .sy{position:absolute;font-size:11px;font-weight:600;color:#e6eedc}
+.f-top .sx{right:30px;bottom:34px}
+.f-top .sy{left:26px;top:30px}
+.f-top .silk{position:absolute;left:0;right:0;bottom:30px;text-align:center;font-size:10px;color:#cfe0d2;letter-spacing:.08em}
+
+/* 3D 위에 올리는 정보 */
+.rpy{position:absolute;z-index:2;left:20px;top:18px;display:grid;gap:12px;pointer-events:none}
+.rpy div{display:grid;grid-template-columns:auto 1fr;align-items:baseline;column-gap:12px}
+.rpy label{width:78px;color:var(--mute);font-size:12px}
+.rpy output{font:500 34px/1.05 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.rpy output small{font-size:14px;color:var(--mute);margin-left:3px}
+.quat{position:absolute;z-index:2;left:20px;bottom:56px;color:var(--mute);font-size:12px;pointer-events:none}
+.legend{position:absolute;z-index:2;right:20px;top:20px;display:grid;gap:5px;font-size:12px;color:var(--mute);pointer-events:none;text-align:right}
+.legend span::before{content:"";display:inline-block;width:18px;height:3px;border-radius:2px;margin-right:7px;vertical-align:middle;background:var(--c)}
+.actions{position:absolute;z-index:3;left:20px;bottom:16px;right:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hint{color:var(--mute);font-size:12px;margin-left:auto}
+.btn{padding:6px 12px;border-radius:5px;border:1px solid #a9b6ad;background:#fbfdfa;cursor:pointer}
+.btn:hover{background:#fff;border-color:#7f9186}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.overlay{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);max-width:340px;text-align:center;padding:14px 18px;background:rgba(251,253,250,.94);border:1px solid var(--line);border-radius:6px;pointer-events:none}
+.overlay strong{display:block;font-size:15px;margin-bottom:2px}
+.overlay span{color:var(--mute)}
+
+/* 마이크 */
+.db{display:flex;align-items:baseline;gap:8px;margin:2px 0 8px}
+.db output{font:500 38px/1 var(--mono);font-variant-numeric:tabular-nums}
+.db .unit{color:var(--mute)}
+.db .lv{margin-left:auto;color:var(--mute)}
+.scope{display:block;width:100%;height:230px}
+.note{margin:8px 0 0;color:var(--mute);font-size:12px}
+
+/* 원시값 표 */
+table.raw{width:100%;border-collapse:collapse}
+.raw th,.raw td{padding:5px 0;text-align:right;font-weight:400}
+.raw th:first-child,.raw td:first-child{text-align:left;color:var(--mute)}
+.raw thead th{color:var(--mute);font-size:12px;border-bottom:1px solid var(--line)}
+.raw td{font:13px var(--mono);font-variant-numeric:tabular-nums}
+.raw td:first-child{font:13px var(--sans)}
+.raw tbody tr+tr td{border-top:1px dotted var(--line)}
+.raw .u{color:var(--mute);font-size:11px;margin-left:4px}
+
+/* 하드웨어 상태 */
+dl.hw{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 14px;align-items:center}
+dl.hw dt{color:var(--mute)}
+dl.hw dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
+.small{color:var(--mute);font-size:12px}
+
+/* 콘솔 */
+.console{grid-area:console;background:var(--term);color:var(--term-ink);border-top:1px solid #000}
+.console .bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 20px;border-bottom:1px solid #1f2a33}
+.console h2{color:#e6f1ea;margin-right:8px}
+.console .btn{background:#17212a;border-color:#2b3a46;color:#d4e4da;padding:4px 11px}
+.console .btn:hover{background:#1e2c37;border-color:#41596b}
+.console .state{margin-left:auto;color:var(--term-mute);font-size:12px}
+.out{height:260px;overflow:auto;padding:10px 20px 14px;font:12.5px/1.55 var(--mono)}
+.ln{white-space:pre-wrap;word-break:break-all}
+.ln.cmd{color:#9fd0ff;margin-top:6px}
+.ln.ok{color:#74dba6}.ln.err{color:#ff8f86}.ln.warn{color:#f2bf6a}.ln.info{color:var(--term-ink)}.ln.dim{color:var(--term-mute)}
+.ln time{color:var(--term-mute);margin-right:10px}
+
+@media (max-width:1000px){
+  main{grid-template-columns:minmax(0,1fr);grid-template-areas:"stage" "side" "console"}
+  .stage{min-height:500px;border-right:0;border-bottom:1px solid var(--line)}
+  .top{flex-wrap:wrap;gap:8px 16px}
+  .facts{margin-left:0;order:3;width:100%}
+  .rpy output{font-size:28px}
+  .hint{display:none}
+}
+@media (prefers-reduced-motion:reduce){.cam{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="id">
+    <b id="hostName">eye-pi</b><span class="sub">센서 대시보드</span>
+    <span class="tag" id="mockTag" hidden>모의 데이터</span>
+  </div>
+  <div class="facts" id="facts"></div>
+  <div class="conn" id="conn"><i></i><span>연결 중…</span></div>
+</header>
+
+<main>
+  <section class="stage" id="stage" aria-label="IMU 3D 화면">
+    <div class="viewport" id="viewport">
+      <div class="cam" id="cam">
+        <div class="ground"></div>
+        <div class="board" id="board">
+          <div class="face f-top" id="fTop">
+            <div class="fwd">앞 +Y ▲</div>
+            <div class="ic">BNO086</div>
+            <div class="sy">+Y ↑</div>
+            <div class="sx">+X →</div>
+            <div class="silk">IMU · 9축</div>
+          </div>
+          <div class="face f-bottom">뒷면</div>
+          <div class="face f-front"></div>
+          <div class="face f-back"></div>
+          <div class="face f-right"></div>
+          <div class="face f-left"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rpy" aria-live="off">
+      <div><label>Roll · X축</label><output id="rRoll">—</output></div>
+      <div><label>Pitch · Y축</label><output id="rPitch">—</output></div>
+      <div><label>Yaw · Z축</label><output id="rYaw">—</output></div>
+    </div>
+    <div class="legend">
+      <span style="--c:var(--ax-x)">X 오른쪽</span>
+      <span style="--c:var(--ax-y)">Y 앞쪽</span>
+      <span style="--c:var(--ax-z)">Z 위쪽</span>
+    </div>
+    <div class="quat num" id="quat"></div>
+    <div class="actions">
+      <button class="btn" id="btnTare" title="지금 바라보는 방향을 정면(Yaw 0°)으로 맞춥니다">정면으로 맞추기</button>
+      <button class="btn" id="btnView">시점 초기화</button>
+      <span class="hint">화면을 드래그하면 시점이 돌아가요</span>
+    </div>
+    <div class="overlay" id="imuOverlay" hidden><strong id="ovTitle"></strong><span id="ovMsg"></span></div>
+  </section>
+
+  <aside class="side">
+    <section>
+      <div class="head"><h2>마이크 음량</h2><span class="chip idle" id="micChip"><i></i><span>대기</span></span></div>
+      <div class="db"><output id="dbNum">—</output><span class="unit">dBFS</span><span class="lv" id="dbLevel"></span></div>
+      <canvas class="scope" id="scope" aria-label="마이크 음량 그래프"></canvas>
+      <p class="note" id="micNote">왼쪽 막대는 지금 크기와 최근 최고점, 오른쪽 선은 최근 30초예요.</p>
+    </section>
+
+    <section>
+      <div class="head"><h2>센서 원시값</h2><span class="small" id="rawRate"></span></div>
+      <table class="raw">
+        <thead><tr><th></th><th>X</th><th>Y</th><th>Z</th></tr></thead>
+        <tbody>
+          <tr><td>가속도<span class="u">m/s²</span></td><td id="a0">—</td><td id="a1">—</td><td id="a2">—</td></tr>
+          <tr><td>자이로<span class="u">rad/s</span></td><td id="g0">—</td><td id="g1">—</td><td id="g2">—</td></tr>
+          <tr><td>지자기<span class="u">µT</span></td><td id="m0">—</td><td id="m1">—</td><td id="m2">—</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <div class="head"><h2>연결 상태</h2></div>
+      <dl class="hw" id="hw"></dl>
+    </section>
+  </aside>
+
+  <section class="console" aria-label="터미널">
+    <div class="bar">
+      <h2>터미널</h2>
+      <button class="btn" data-job="i2c" title="i2cdetect -y 1">I2C 스캔</button>
+      <button class="btn" data-job="audio" title="arecord -l">오디오 장치</button>
+      <button class="btn" data-job="mic">마이크 테스트</button>
+      <button class="btn" data-job="imu">IMU 테스트</button>
+      <button class="btn" data-job="all">전체 점검</button>
+      <button class="btn" id="btnClear">지우기</button>
+      <span class="state" id="jobState">버튼을 누르면 Pi에서 명령이 실행되고 결과가 여기에 나와요</span>
+    </div>
+    <div class="out" id="out" role="log" aria-live="polite"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const COLORS = { grid: css('--grid'), mute: css('--mute'), ink: css('--ink'), blue: css('--blue'), warn: css('--warn'), err: css('--err'), track: '#e1e8e2' };
+const MONO = css('--mono');
+
+/* ---------- 쿼터니언 / 행렬 ---------- */
+// 쿼터니언은 [x, y, z, w] 순서
+function qmul(a, b) {
+  return [
+    a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1],
+    a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0],
+    a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3],
+    a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2]
+  ];
+}
+function qnorm(q) { const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1; return [q[0]/n, q[1]/n, q[2]/n, q[3]/n]; }
+function yawOf(q) { const [x, y, z, w] = q; return Math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)); }
+function toEuler(q) {
+  const [x, y, z, w] = q;
+  return [
+    Math.atan2(2*(w*x + y*z), 1 - 2*(x*x + y*y)),
+    Math.asin(clamp(2*(w*y - z*x), -1, 1)),
+    Math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
+  ].map(v => v * 180 / Math.PI);
+}
+function rotMat(q) {
+  const [x, y, z, w] = q;
+  return [
+    [1 - 2*(y*y + z*z), 2*(x*y - z*w),     2*(x*z + y*w)],
+    [2*(x*y + z*w),     1 - 2*(x*x + z*z), 2*(y*z - x*w)],
+    [2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x*x + y*y)]
+  ];
+}
+function mul3(A, B) {
+  return A.map((_, i) => B[0].map((__, j) => A[i][0]*B[0][j] + A[i][1]*B[1][j] + A[i][2]*B[2][j]));
+}
+// 센서/월드 좌표(x 동쪽, y 북쪽, z 위쪽, 오른손 좌표계)를 CSS 3D 좌표(x 오른쪽, y 아래, z 화면 앞쪽)로 바꾸는 행렬.
+// P는 자기 자신이 역행렬이라 보드 변환은 P·R·P 가 된다.
+const P = [[1, 0, 0], [0, 0, -1], [0, -1, 0]];
+function cssMatrix(q) {
+  const M = mul3(mul3(P, rotMat(q)), P);
+  const f = v => v.toFixed(6);
+  return 'matrix3d(' + [M[0][0], M[1][0], M[2][0], 0, M[0][1], M[1][1], M[2][1], 0, M[0][2], M[1][2], M[2][2], 0, 0, 0, 0, 1].map(f).join(',') + ')';
+}
+window.__eyepi = { qmul, qnorm, yawOf, toEuler, rotMat, cssMatrix };
+
+/* ---------- 3D 보드 ---------- */
+const board = $('board'), cam = $('cam'), viewport = $('viewport');
+(function buildBoard() {
+  const top = $('fTop');
+  for (let i = 0; i < 8; i++) { const d = document.createElement('div'); d.className = 'pad'; d.style.left = (22 + i * 28) + 'px'; top.appendChild(d); }
+  for (const [l, t] of [[10, 10], [218, 10], [10, 138], [218, 138]]) { const d = document.createElement('div'); d.className = 'hole'; d.style.left = l + 'px'; d.style.top = t + 'px'; top.appendChild(d); }
+  // 센서 좌표축: 가로/세로 두 장을 십자로 겹쳐서 어느 각도에서도 보이게 한다
+  const axes = [['var(--ax-x)', 'none', 175], ['var(--ax-y)', 'rotateY(90deg)', 135], ['var(--ax-z)', 'rotateZ(-90deg)', 110]];
+  for (const [color, base, len] of axes) {
+    const g = document.createElement('div');
+    g.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;transform-style:preserve-3d;transform:' + base;
+    for (const rot of ['none', 'rotateX(90deg)']) {
+      const bar = document.createElement('div');
+      bar.style.cssText = `position:absolute;left:0;top:-1.5px;width:${len}px;height:3px;background:${color};transform-origin:0 50%;transform:${rot}`;
+      g.appendChild(bar);
+    }
+    board.appendChild(g);
+  }
+})();
+
+let camRX = -30, camRY = -34, camScale = 1;
+function setCam() { cam.style.transform = `rotateX(${camRX}deg) rotateY(${camRY}deg) scale(${camScale})`; }
+function fitCam() {
+  const r = viewport.getBoundingClientRect();
+  camScale = clamp(Math.min(r.width / 760, r.height / 560), 0.55, 1.3);
+  setCam();
+}
+fitCam();
+window.addEventListener('resize', fitCam);
+let drag = null;
+viewport.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; viewport.setPointerCapture(e.pointerId); });
+viewport.addEventListener('pointermove', e => {
+  if (!drag) return;
+  camRY += (e.clientX - drag.x) * 0.4;
+  camRX = clamp(camRX - (e.clientY - drag.y) * 0.4, -88, 8);
+  drag = { x: e.clientX, y: e.clientY };
+  setCam();
+});
+const endDrag = () => { drag = null; };
+viewport.addEventListener('pointerup', endDrag);
+viewport.addEventListener('pointercancel', endDrag);
+$('btnView').addEventListener('click', () => { camRX = -30; camRY = -34; setCam(); });
+
+/* ---------- 자세 데이터 ---------- */
+let target = [0, 0, 0, 1], cur = [0, 0, 0, 1], tareYaw = 0;
+function applyTare(q) { const h = -tareYaw / 2; return qmul([0, 0, Math.sin(h), Math.cos(h)], q); }
+$('btnTare').addEventListener('click', () => { tareYaw = yawOf(target); });
+
+const fmtDeg = v => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(1);
+function writeReadouts(qd) {
+  const [r, p, y] = toEuler(qd);
+  $('rRoll').innerHTML = fmtDeg(r) + '<small>°</small>';
+  $('rPitch').innerHTML = fmtDeg(p) + '<small>°</small>';
+  $('rYaw').innerHTML = fmtDeg(y) + '<small>°</small>';
+  $('quat').textContent = 'q = [' + qd.map(v => (v < 0 ? '' : ' ') + v.toFixed(3)).join(', ') + ']';
+}
+
+/* ---------- 마이크 그래프 ---------- */
+const HIST = 300;                       // 0.1초 × 300 = 30초
+const hist = new Array(HIST).fill(null);
+let micLive = false, micDb = -120, peakHold = -120, peakAt = 0, lastMicTs = 0, lastFrame = performance.now();
+const scope = $('scope');
+function drawScope() {
+  const w = scope.clientWidth, h = scope.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round(w * dpr), H = Math.round(h * dpr);
+  if (scope.width !== W || scope.height !== H) { scope.width = W; scope.height = H; }
+  const g = scope.getContext('2d');
+  if (!g) return;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const top = 8, bot = h - 8;
+  const y = d => top + (1 - clamp((d + 90) / 90, 0, 1)) * (bot - top);
+
+  g.font = '11px ' + MONO; g.textBaseline = 'middle'; g.textAlign = 'right';
+  for (const d of [0, -20, -40, -60, -80]) {
+    const yy = Math.round(y(d)) + 0.5;
+    g.strokeStyle = COLORS.grid; g.lineWidth = 1; g.beginPath(); g.moveTo(40, yy); g.lineTo(w, yy); g.stroke();
+    g.fillStyle = COLORS.mute; g.fillText(String(d), 34, yy);
+  }
+  // 현재 음량 막대
+  const mx = 46, mw = 22;
+  g.fillStyle = COLORS.track; g.fillRect(mx, top, mw, bot - top);
+  if (micLive) {
+    const yy = y(micDb);
+    const grad = g.createLinearGradient(0, bot, 0, top);
+    grad.addColorStop(0, COLORS.blue); grad.addColorStop(0.6, COLORS.blue); grad.addColorStop(0.8, COLORS.warn); grad.addColorStop(1, COLORS.err);
+    g.fillStyle = grad; g.fillRect(mx, yy, mw, bot - yy);
+    g.fillStyle = COLORS.ink; g.fillRect(mx - 3, Math.round(y(peakHold)) - 1, mw + 6, 2);
+  }
+  // 최근 30초 기록
+  const hx = 84, hw = w - hx - 6;
+  const px = i => hx + (i / (HIST - 1)) * hw;
+  g.lineWidth = 1.6; g.lineJoin = 'round'; g.strokeStyle = COLORS.blue; g.fillStyle = 'rgba(29,95,209,.12)';
+  let start = -1;
+  const close = end => {
+    if (start < 0) return;
+    g.stroke();
+    g.lineTo(px(end), bot); g.lineTo(px(start), bot); g.closePath(); g.fill();
+    start = -1;
+  };
+  for (let i = 0; i < HIST; i++) {
+    const v = hist[i];
+    if (v === null) { close(i - 1); continue; }
+    if (start < 0) { g.beginPath(); g.moveTo(px(i), y(v)); start = i; } else g.lineTo(px(i), y(v));
+  }
+  close(HIST - 1);
+}
+
+/* ---------- 프레임 루프 ---------- */
+let lastReadout = 0;
+function frame(ts) {
+  let t = target;
+  if (cur[0]*t[0] + cur[1]*t[1] + cur[2]*t[2] + cur[3]*t[3] < 0) t = t.map(v => -v);
+  cur = qnorm(cur.map((v, i) => v + (t[i] - v) * 0.35));
+  const qd = applyTare(cur);
+  board.style.transform = cssMatrix(qd);
+  if (ts - lastReadout > 100) { lastReadout = ts; if (imuFresh) writeReadouts(qd); }
+  // 최고점 표시는 1.2초 붙잡아 두었다가 천천히 내려온다
+  const dt = ts - lastFrame; lastFrame = ts;
+  if (ts - peakAt > 1200) peakHold = Math.max(micDb, peakHold - 30 * dt / 1000);
+  drawScope();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 상태 표시 ---------- */
+let imuFresh = false;
+function setChip(node, cls, text) { node.className = 'chip ' + cls; node.querySelector('span').textContent = text; }
+function fmtUptime(sec) {
+  if (sec == null) return '—';
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
+}
+const CALIB = [['err', '신뢰 불가'], ['warn', '낮음'], ['warn', '보통'], ['ok', '높음']];
+function statusChip(st, fresh) {
+  if (st === 'ok') return fresh ? ['ok', '연결됨'] : ['warn', '데이터 끊김'];
+  return ({ not_found: ['err', '찾지 못함'], error: ['err', '오류'], init: ['idle', '준비 중'], paused: ['warn', '점검 중'] })[st] || ['idle', st];
+}
+const chipHtml = (cls, text) => `<span class="chip ${cls}"><i></i><span>${esc(text)}</span></span>`;
+let lastHw = '';
+
+function onState(s) {
+  const imu = s.imu, mic = s.mic, sys = s.sys || {};
+  $('hostName').textContent = sys.host || 'eye-pi';
+  document.title = (sys.host || 'eye-pi') + ' · 센서 대시보드';
+  $('mockTag').hidden = !s.mock;
+
+  const facts = [];
+  if (sys.ip) facts.push(`주소 <b class="num">${esc(sys.ip)}</b>`);
+  if (sys.temp != null) facts.push(`온도 <b class="num">${sys.temp.toFixed(1)}°C</b>`);
+  if (sys.uptime != null) facts.push(`가동 <b>${fmtUptime(sys.uptime)}</b>`);
+  const factsHtml = facts.join('');
+  if ($('facts').dataset.h !== factsHtml) { $('facts').innerHTML = factsHtml; $('facts').dataset.h = factsHtml; }
+
+  /* IMU */
+  imuFresh = imu.status === 'ok' && imu.age != null && imu.age < 1.5;
+  if (imuFresh) target = imu.q;
+  viewport.classList.toggle('dim', !imuFresh);
+  const ov = $('imuOverlay');
+  if (imuFresh) ov.hidden = true;
+  else {
+    ov.hidden = false;
+    const t = {
+      ok: ['IMU 데이터가 끊겼어요', '센서 연결을 다시 확인하고 있어요'],
+      not_found: ['IMU를 찾지 못했어요', imu.msg],
+      error: ['IMU 오류', imu.msg],
+      init: ['IMU를 준비하고 있어요', '잠시만 기다려 주세요'],
+      paused: ['점검을 실행하는 중이에요', '끝나면 자동으로 다시 연결돼요']
+    }[imu.status] || ['IMU 상태 확인 중', ''];
+    $('ovTitle').textContent = t[0]; $('ovMsg').textContent = t[1] || '';
+  }
+  ['a', 'g', 'm'].forEach((k, row) => {
+    const src = [imu.accel, imu.gyro, imu.mag][row];
+    for (let i = 0; i < 3; i++) $(k + i).textContent = imuFresh ? (src[i] < 0 ? '−' : '+') + Math.abs(src[i]).toFixed(row === 2 ? 1 : 2) : '—';
+  });
+  $('rawRate').textContent = imuFresh ? `${imu.rate.toFixed(0)} Hz` : '';
+
+  /* 마이크 */
+  micLive = mic.status === 'ok' && mic.age != null && mic.age < 1.5;
+  if (micLive) {
+    micDb = mic.rms_db;
+    if (mic.ts !== lastMicTs) {
+      lastMicTs = mic.ts; hist.push(mic.rms_db); hist.shift();
+      if (mic.peak_db >= peakHold) { peakHold = mic.peak_db; peakAt = performance.now(); }
+    }
+    $('dbNum').textContent = mic.rms_db <= -90 ? '< −90' : (mic.rms_db < 0 ? '−' : '') + Math.abs(mic.rms_db).toFixed(1);
+    $('dbLevel').textContent = mic.rms_db > -15 ? '매우 큼' : mic.rms_db > -35 ? '큼' : mic.rms_db > -60 ? '보통' : '조용함';
+    $('micNote').textContent = '왼쪽 막대는 지금 크기와 최근 최고점, 오른쪽 선은 최근 30초예요.';
+  } else {
+    micDb = -120; peakHold = -120;
+    $('dbNum').textContent = '—'; $('dbLevel').textContent = '';
+    for (let i = 0; i < HIST; i++) hist[i] = null;
+    $('micNote').textContent = mic.msg || '마이크 데이터를 기다리고 있어요.';
+  }
+  const mc = statusChip(mic.status, micLive);
+  setChip($('micChip'), mc[0], mc[1]);
+
+  /* 연결 상태 목록 */
+  const ic = statusChip(imu.status, imuFresh);
+  const cal = imu.calib == null ? null : CALIB[clamp(imu.calib, 0, 3)];
+  const rows = [
+    ['IMU', chipHtml(ic[0], ic[1]) + (imu.addr ? ` <span class="num">${esc(imu.addr)}</span>` : '')],
+    ['I2C 장치', imu.i2c_scan && imu.i2c_scan.length ? `<span class="num">${esc(imu.i2c_scan.join(' '))}</span>` : '<span class="small">없음</span>'],
+    ['방향 정확도', cal ? chipHtml(cal[0], cal[1]) : '<span class="small">—</span>'],
+    ['마이크', chipHtml(mc[0], mc[1]) + (mic.card != null ? ` <span class="num">card ${esc(mic.card)}</span>` : '')],
+    ['Pi 부하', sys.load ? `<span class="num">${sys.load.join(' / ')}</span>` : '—'],
+    ['메모리', sys.mem_total ? `<span class="num">${sys.mem_used} / ${sys.mem_total} MB</span>` : '—']
+  ];
+  const hwHtml = rows.map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('');
+  if (hwHtml !== lastHw) { $('hw').innerHTML = hwHtml; lastHw = hwHtml; }
+
+  /* 작업 실행 상태 */
+  const running = s.job && s.job.running;
+  document.querySelectorAll('[data-job]').forEach(b => { b.disabled = !!running; });
+  if (running) $('jobState').textContent = '실행 중…';
+}
+
+/* ---------- 터미널 ---------- */
+const out = $('out');
+let lastLive = false, lastLogId = 0;
+function pushLine(text, cls, live) {
+  const near = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  if (lastLive && out.lastChild) { out.lastChild.textContent = text; out.lastChild.className = 'ln ' + cls; }
+  else { const d = document.createElement('div'); d.className = 'ln ' + cls; d.textContent = text; out.appendChild(d); }
+  lastLive = !!live;
+  while (out.childNodes.length > 600) out.removeChild(out.firstChild);
+  if (near) out.scrollTop = out.scrollHeight;
+}
+function classify(text) {
+  if (/\[PASS\]|PASS ✅/.test(text)) return 'ok';
+  if (/\[FAIL\]|FAIL ❌|\[ERROR\]|명령을 찾을 수 없음|실행 실패/.test(text)) return 'err';
+  if (/\[WARN\]/.test(text)) return 'warn';
+  return 'info';
+}
+function onLog(e) {
+  if (e.id <= lastLogId) return;
+  lastLogId = e.id;
+  lastLive = false;
+  const d = document.createElement('div');
+  d.className = 'ln ' + (e.level === 'ok' ? 'ok' : e.level === 'err' ? 'err' : e.level === 'warn' ? 'warn' : 'dim');
+  const t = document.createElement('time'); t.textContent = e.t;
+  d.appendChild(t); d.appendChild(document.createTextNode(e.msg));
+  const near = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  out.appendChild(d);
+  while (out.childNodes.length > 600) out.removeChild(out.firstChild);
+  if (near) out.scrollTop = out.scrollHeight;
+}
+function onJob(e) {
+  if (e.type === 'start') { lastLive = false; pushLine('$ ' + e.cmd, 'cmd'); $('jobState').textContent = e.label + ' 실행 중…'; }
+  else if (e.type === 'line') pushLine(e.text, classify(e.text), e.live);
+  else if (e.type === 'final') lastLive = false;
+  else if (e.type === 'done') {
+    lastLive = false;
+    pushLine(e.code === 0 ? '✓ 끝났어요 (종료 코드 0)' : `✗ 실패했어요 (종료 코드 ${e.code})`, e.code === 0 ? 'ok' : 'err');
+    $('jobState').textContent = e.code === 0 ? '마지막 작업: 성공' : '마지막 작업: 실패';
+  }
+}
+async function runJob(name) {
+  try {
+    const r = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job: name }) });
+    const j = await r.json();
+    if (!j.ok) pushLine(j.msg, 'warn');
+  } catch (err) {
+    pushLine('서버에 연결할 수 없어요. Pi가 켜져 있는지 확인하세요.', 'err');
+  }
+}
+document.querySelectorAll('[data-job]').forEach(b => b.addEventListener('click', () => runJob(b.dataset.job)));
+$('btnClear').addEventListener('click', () => { out.textContent = ''; lastLive = false; });
+
+/* ---------- 서버 연결 ---------- */
+const conn = $('conn');
+function setConn(state, text) { conn.className = 'conn ' + state; conn.querySelector('span').textContent = text; }
+let lastMsg = performance.now();
+if (window.EventSource) {
+  const es = new EventSource('/api/stream');
+  es.onopen = () => setConn('live', '실시간');
+  es.onerror = () => setConn('down', '연결 끊김 · 다시 연결 중');
+  es.onmessage = e => { lastMsg = performance.now(); setConn('live', '실시간'); onState(JSON.parse(e.data)); };
+  es.addEventListener('log', e => onLog(JSON.parse(e.data)));
+  es.addEventListener('job', e => onJob(JSON.parse(e.data)));
+  setInterval(() => { if (performance.now() - lastMsg > 3000 && conn.classList.contains('live')) setConn('down', '응답 없음'); }, 1000);
+} else {
+  setConn('down', '이 브라우저는 실시간 연결을 지원하지 않아요');
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
