@@ -51,7 +51,7 @@ sudo reboot
 
 - `config.txt`에 추가 (`/boot/firmware/config.txt`, 구버전은 `/boot/config.txt`; 원본은 `.bak-eye-pi`로 백업)
   - `dtparam=i2c_arm=on` — I2C 켜기
-  - `dtparam=i2c_arm_baudrate=400000` — BNO08x 권장 속도
+  - `dtparam=i2c_arm_baudrate=...` — I2C 속도 (BNO08x는 400000 권장이지만 Pi Zero에서는 100000 이하로 낮춰 시험 중)
   - `dtoverlay=googlevoicehat-soundcard` — I2S 마이크 드라이버 (Adafruit 가이드 방식)
 - `i2c-dev` 모듈 로드, 사용자를 `i2c`/`audio`/`gpio` 그룹에 추가
 - 필요한 apt 패키지, `.venv` 가상환경, 파이썬 라이브러리 설치
@@ -127,11 +127,15 @@ python test_imu.py --address 0x4A --duration 20    # 주소/시간 지정
 **IMU**
 - `i2cdetect -y 1`에서 `4b`(또는 `4a`)가 안 보임 → 전원/SDA/SCL 배선, 납땜 상태 확인
 - 초기화 오류가 가끔 남 → 센서 전원을 껐다 켜고 재시도 (BNO08x의 알려진 특성)
-- `Unprocessable Batch bytes` 오류 → 자동으로 리셋 후 최대 5번 재시도합니다. 계속되면:
-  1. 센서 3V3를 뽑았다 꽂아 완전히 전원 리셋
-  2. BNO086 **RST**를 Pi GPIO24(핀 18)에 연결하고 `python server.py --reset-pin 24` (하드웨어 리셋)
-  3. I2C 속도 바꿔 보기: `config.txt`의 `dtparam=i2c_arm_baudrate=400000`을 `100000`(또는 더 느리게)으로 바꾸고 재부팅
-  4. SDA/SCL 선을 짧게, 점퍼 접촉 확인
+- `Unprocessable Batch bytes` 오류 → 센서가 명령 채널(0)로 보낸 짧은 메시지(예: `01 0E`)를 라이브러리(v1.3.3)가
+  센서 데이터로 잘못 읽어서 나는 오류입니다. `imu_init.py`가 이 패킷을 건너뛰도록 라이브러리를 패치합니다
+  (`server.py`, `test_imu.py`에 자동 적용). 그래도 실패하면:
+  1. 진단: 서버를 멈추고 `python tools/imu_diag.py` (RST 연결 시 `--reset-pin 24`) — 어떤 패킷이 오가는지 출력
+  2. 센서 3V3를 뽑았다 꽂아 완전히 전원 리셋
+  3. BNO086 **RST**를 Pi GPIO24(핀 18)에 연결하고 `python server.py --reset-pin 24` (하드웨어 리셋)
+  4. I2C 속도 바꾸기: `sudo bash tools/set_i2c_speed.sh 50000` 후 `sudo reboot` (100000 → 50000 → 10000 순서로)
+  5. SDA/SCL 선을 짧게, 점퍼 접촉 확인
+- Pi 상태를 한 번에 보기: `bash tools/pi_status.sh` (git, I2C 설정·스캔, 전원, 실행 중인 서버)
 - 가속도 크기가 9.8에서 크게 벗어남 → 테스트 중 보드를 움직이고 있지 않은지 확인
 
 **대시보드**
