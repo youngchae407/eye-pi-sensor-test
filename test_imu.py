@@ -42,6 +42,8 @@ def main():
                     help="I2C 주소 (기본: 0x4B, 0x4A 순서로 시도)")
     ap.add_argument("--duration", type=float, default=10.0, help="측정 시간(초), 기본 10")
     ap.add_argument("--rate", type=float, default=5.0, help="출력 횟수(Hz), 기본 5")
+    ap.add_argument("--reset-pin", type=int, default=None, metavar="BCM",
+                    help="BNO086 RST를 연결한 Pi GPIO 번호(BCM), 예: 24")
     args = ap.parse_args()
 
     try:
@@ -53,7 +55,6 @@ def main():
             BNO_REPORT_MAGNETOMETER,
             BNO_REPORT_ROTATION_VECTOR,
         )
-        from adafruit_bno08x.i2c import BNO08X_I2C
     except Exception as e:  # ImportError, NotImplementedError(비-Pi 환경) 등
         print(f"[ERROR] 라이브러리를 불러올 수 없습니다: {e}")
         print("        setup.sh를 실행했는지, 가상환경(source .venv/bin/activate)이 켜져 있는지 확인하세요.")
@@ -86,30 +87,26 @@ def main():
         print("       - 터미널에서 `i2cdetect -y 1` 로도 확인 가능")
         return 1
 
-    # 2) 초기화 (BNO08x는 첫 시도에서 가끔 실패하므로 재시도)
-    bno = None
-    addr = None
-    for a in candidates:
-        for attempt in range(1, 4):
-            try:
-                bno = BNO08X_I2C(i2c, address=a)
-                addr = a
-                break
-            except Exception as e:
-                print(f"  초기화 재시도 {attempt}/3 (addr {hex(a)}): {e}")
-                time.sleep(0.5)
-        if bno:
-            break
-    if bno is None:
-        print("[FAIL] 센서를 찾았지만 초기화에 실패했습니다.")
+    # 2) 초기화 (BNO08x는 첫 시도에서 가끔 실패하므로 리셋 후 통째로 재시도)
+    import imu_init
+    imu_init.quiet_library()
+    reset_pin = None
+    if args.reset_pin is not None:
+        reset_pin = imu_init.open_reset_pin(args.reset_pin)
+        print(f"RST 핀: GPIO{args.reset_pin} (하드웨어 리셋 사용)")
+    features = (BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE,
+                BNO_REPORT_MAGNETOMETER, BNO_REPORT_ROTATION_VECTOR)
+    try:
+        bno, addr = imu_init.bring_up(i2c, candidates, features,
+                                      lambda m, lvl: print("  " + m), reset_pin=reset_pin)
+    except Exception as e:
+        print(f"[FAIL] 센서를 찾았지만 초기화에 실패했습니다: {type(e).__name__}: {e}")
         print("       - 센서 전원을 한 번 껐다 켜 보세요 (3V3 재연결)")
         print("       - SparkFun 보드의 PS0/PS1 점퍼가 I2C 모드(기본값)인지 확인")
+        print("       - RST를 Pi GPIO(예: GPIO24)에 연결하고 --reset-pin 24 로 실행해 보세요")
+        print("       - 그래도 안 되면 I2C 속도를 바꿔 보세요 (README '문제 해결' 참고)")
         return 1
     print(f"[OK] BNO086 초기화 성공 (주소 {hex(addr)})")
-
-    for feature in (BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE,
-                    BNO_REPORT_MAGNETOMETER, BNO_REPORT_ROTATION_VECTOR):
-        bno.enable_feature(feature)
     time.sleep(0.5)
 
     # 3) 읽기 루프

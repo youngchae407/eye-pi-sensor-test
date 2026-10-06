@@ -30,7 +30,7 @@ Wants=network-online.target
 [Service]
 User=$USER
 WorkingDirectory=$DIR
-ExecStart=$PY $DIR/server.py --port 8000
+ExecStart=$PY $DIR/server.py --port 8080
 Restart=on-failure
 RestartSec=3
 
@@ -43,7 +43,7 @@ sudo systemctl enable --now "$NAME"
 
 echo
 echo "등록 완료. 이제 Pi가 켜지면 대시보드가 자동으로 시작됩니다."
-echo "  Mac 브라우저:  http://$(hostname).local:8000"
+echo "  Mac 브라우저:  http://$(hostname).local:8080"
 echo "  상태 보기:     systemctl status $NAME"
 echo "  로그 보기:     journalctl -u $NAME -f"
 echo "  잠시 멈추기:   sudo systemctl stop $NAME   (터미널에서 test_mic.py를 직접 돌릴 때 필요)"
