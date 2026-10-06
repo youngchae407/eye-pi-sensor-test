@@ -64,7 +64,7 @@ source .venv/bin/activate
 python server.py
 ```
 
-Mac 브라우저에서 **http://eye-pi-1.local:8000** 을 엽니다. (`.local`이 안 열리면 서버를 켤 때 출력되는 IP 주소로 접속하세요.)
+Mac 브라우저에서 **http://eye-pi-1.local:8080** 을 엽니다. (`.local`이 안 열리면 서버를 켤 때 출력되는 IP 주소로 접속하세요.)
 
 화면 구성:
 
@@ -77,12 +77,13 @@ Mac 브라우저에서 **http://eye-pi-1.local:8000** 을 엽니다. (`.local`�
 옵션:
 
 ```bash
-python server.py --port 8080         # 포트 변경
+python server.py --port 9000         # 포트 변경 (기본 8080)
+python server.py --reset-pin 24      # BNO086 RST를 GPIO24에 연결했을 때 하드웨어 리셋 사용
 python server.py --game-rotation     # 지자기 없이 방향 계산 (실내에서 Yaw가 흔들릴 때)
 python server.py --no-mic            # 마이크 읽기 끄기 (--no-imu 도 있음)
 ```
 
-**센서 없이 화면만 보기**: Mac에서도 `python3 server.py --mock` 을 실행하면 가짜 데이터로 대시보드가 움직입니다 (`http://localhost:8000`).
+**센서 없이 화면만 보기**: Mac에서도 `python3 server.py --mock` 을 실행하면 가짜 데이터로 대시보드가 움직입니다 (`http://localhost:8080`).
 
 **부팅할 때 자동 시작**:
 
@@ -126,10 +127,15 @@ python test_imu.py --address 0x4A --duration 20    # 주소/시간 지정
 **IMU**
 - `i2cdetect -y 1`에서 `4b`(또는 `4a`)가 안 보임 → 전원/SDA/SCL 배선, 납땜 상태 확인
 - 초기화 오류가 가끔 남 → 센서 전원을 껐다 켜고 재시도 (BNO08x의 알려진 특성)
+- `Unprocessable Batch bytes` 오류 → 자동으로 리셋 후 최대 5번 재시도합니다. 계속되면:
+  1. 센서 3V3를 뽑았다 꽂아 완전히 전원 리셋
+  2. BNO086 **RST**를 Pi GPIO24(핀 18)에 연결하고 `python server.py --reset-pin 24` (하드웨어 리셋)
+  3. I2C 속도 바꿔 보기: `config.txt`의 `dtparam=i2c_arm_baudrate=400000`을 `100000`(또는 더 느리게)으로 바꾸고 재부팅
+  4. SDA/SCL 선을 짧게, 점퍼 접촉 확인
 - 가속도 크기가 9.8에서 크게 벗어남 → 테스트 중 보드를 움직이고 있지 않은지 확인
 
 **대시보드**
-- 브라우저에서 `eye-pi-1.local:8000`이 안 열림 → `ssh`로 접속해 `python server.py`가 실행 중인지(또는 `systemctl status eye-pi-dashboard`) 확인
+- 브라우저에서 `eye-pi-1.local:8080`이 안 열림 → `ssh`로 접속해 `python server.py`가 실행 중인지(또는 `systemctl status eye-pi-dashboard`) 확인
 - 3D 보드가 흐리게 보임 → IMU 연결 상태를 알려 주는 안내 문구가 화면 가운데에 나옵니다
 
 ## 6. 개발 흐름 (GitHub)

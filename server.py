@@ -2,7 +2,7 @@
 """eye-pi 센서 대시보드 서버.
 
 Pi에서 실행하면 IMU(BNO086)와 I2S 마이크 값을 읽어 웹 브라우저로 실시간 전송합니다.
-같은 네트워크의 Mac 브라우저에서 http://eye-pi-1.local:8000 으로 접속하세요.
+같은 네트워크의 Mac 브라우저에서 http://eye-pi-1.local:8080 으로 접속하세요.
 
     python server.py                 # 실제 센서
     python server.py --mock          # 센서 없이 가짜 데이터로 화면만 확인 (Mac에서도 실행 가능)
@@ -229,9 +229,11 @@ class ImuReader(Reader):
     store_name = "imu"
     label = "IMU"
 
-    def __init__(self, use_game_rotation=False):
+    def __init__(self, use_game_rotation=False, reset_bcm=None):
         super().__init__()
         self.use_game = use_game_rotation
+        self.reset_bcm = reset_bcm
+        self.reset_pin = None
 
     def session(self):
         try:
@@ -265,25 +267,18 @@ class ImuReader(Reader):
                 self.paused.wait(3.0)
                 return
 
-            bno, addr = None, None
-            for a in candidates:
-                for attempt in range(3):
-                    try:
-                        bno = BNO08X_I2C(i2c, address=a)
-                        addr = a
-                        break
-                    except Exception as e:  # noqa: BLE001
-                        BUS.log(f"IMU 초기화 재시도 {attempt + 1}/3 (주소 {hex(a)}): {e}", "warn")
-                        time.sleep(0.5)
-                if bno:
-                    break
-            if bno is None:
-                raise RuntimeError("BNO086 초기화 실패 - 센서 전원을 껐다 켜 보세요")
-
+            import imu_init
+            imu_init.quiet_library()
             quat_feature = "BNO_REPORT_GAME_ROTATION_VECTOR" if self.use_game else "BNO_REPORT_ROTATION_VECTOR"
-            for feature in ("BNO_REPORT_ACCELEROMETER", "BNO_REPORT_GYROSCOPE",
-                            "BNO_REPORT_MAGNETOMETER", quat_feature):
-                bno.enable_feature(getattr(lib, feature))
+            features = [getattr(lib, f) for f in ("BNO_REPORT_ACCELEROMETER", "BNO_REPORT_GYROSCOPE",
+                                                  "BNO_REPORT_MAGNETOMETER", quat_feature)]
+            if self.reset_pin is None and self.reset_bcm is not None:
+                self.reset_pin = imu_init.open_reset_pin(self.reset_bcm)
+            try:
+                bno, addr = imu_init.bring_up(i2c, candidates, features, BUS.log,
+                                              reset_pin=self.reset_pin)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(f"BNO086 초기화 실패 ({e}) - 센서 전원을 껐다 켜 보세요") from e
             time.sleep(0.3)
 
             self.set(status="ok", msg="", addr=hex(addr), errors=0)
@@ -831,7 +826,9 @@ def publisher(mock):
 def main():
     ap = argparse.ArgumentParser(description="eye-pi 센서 대시보드 서버")
     ap.add_argument("--host", default="0.0.0.0", help="바인드 주소 (기본: 모든 네트워크)")
-    ap.add_argument("--port", type=int, default=8000, help="포트 (기본: 8000)")
+    ap.add_argument("--port", type=int, default=8080, help="포트 (기본: 8080)")
+    ap.add_argument("--reset-pin", type=int, default=None, metavar="BCM",
+                    help="BNO086 RST를 연결한 Pi GPIO 번호(BCM). 주면 하드웨어 리셋을 씁니다 (예: 24)")
     ap.add_argument("--mock", action="store_true", help="센서 없이 가짜 데이터로 실행")
     ap.add_argument("--card", type=int, default=None, help="ALSA 마이크 카드 번호 (기본: 자동 탐지)")
     ap.add_argument("--game-rotation", action="store_true",
@@ -842,7 +839,7 @@ def main():
 
     readers = []
     if not args.no_imu:
-        readers.append(MockImu() if args.mock else ImuReader(args.game_rotation))
+        readers.append(MockImu() if args.mock else ImuReader(args.game_rotation, args.reset_pin))
     if not args.no_mic:
         readers.append(MockMic() if args.mock else MicReader(args.card))
     JOB.readers = readers
