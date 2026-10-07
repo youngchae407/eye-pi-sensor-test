@@ -45,8 +45,16 @@ add_line() {
 
 # I2C: BNO086 (SDA=GPIO2/핀3, SCL=GPIO3/핀5)
 add_line "dtparam=i2c_arm=on"
-# BNO08x는 I2C clock stretching을 써서 속도를 400kHz로 올리는 것이 권장됨
-add_line "dtparam=i2c_arm_baudrate=400000"
+# BNO08x는 I2C clock stretching 을 쓰는데 Pi 의 하드웨어 I2C 는 이를 제대로 처리하지 못함.
+# Adafruit 가이드(circuitpython-on-raspberrypi-linux/i2c-clock-stretching): 10kHz 로 낮추고,
+# 그래도 안 되면 5000 → 1000 으로 더 낮춤 (tools/set_i2c_speed.sh, 변경 후 재부팅)
+I2C_BAUD="dtparam=i2c_arm_baudrate=10000"
+if grep -q "^dtparam=i2c_arm_baudrate=" "$CONFIG"; then
+  sudo sed -i "s/^dtparam=i2c_arm_baudrate=.*/$I2C_BAUD/" "$CONFIG"
+  echo "  변경: $I2C_BAUD"
+else
+  add_line "$I2C_BAUD"
+fi
 # I2S: MEMS 마이크 (BCLK=GPIO18/핀12, LRCL=GPIO19/핀35, DOUT=GPIO20/핀38)
 # Adafruit 가이드: googlevoicehat-soundcard 오버레이 (48kHz 고정, 볼륨 컨트롤 없음)
 add_line "dtoverlay=googlevoicehat-soundcard"

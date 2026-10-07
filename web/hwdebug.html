@@ -157,6 +157,7 @@ main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;
         <dt>저전압/스로틀</dt><dd id="thr">-</dd>
         <dt>코어 전압</dt><dd class="num" id="corev">-</dd>
         <dt>CPU 온도</dt><dd class="num" id="temp">-</dd>
+        <dt>I2C 속도</dt><dd id="i2chz">-</dd>
       </dl>
       <p class="mute" style="margin:8px 0 0;font-size:12px">Pi 입력 전원(5V)이 약하면 '저전압'이 뜹니다. 3.3V 핀에 연결된 센서 전류는 여기서 보이지 않습니다.</p>
     </section>
@@ -351,6 +352,8 @@ function render(){
     : `<span class="chip ok"><i></i>없음 (0x${pw.throttled.toString(16)})</span>`);
   $("#corev").textContent = pw.core_v ? pw.core_v.toFixed(4) + " V" : "-";
   $("#temp").textContent = pw.temp_c ? pw.temp_c.toFixed(1) + " °C" : "-";
+  $("#i2chz").innerHTML = pw.i2c_hz ? `<span class="num">${(pw.i2c_hz / 1000).toLocaleString()} kHz</span> ` + (pw.i2c_hz > 10000
+    ? `<span class="chip warn"><i></i>BNO08x 는 10kHz 이하 권장</span>` : `<span class="chip ok"><i></i>권장 범위</span>`) : "-";
   const hasCur = S.ina_addr !== null && S.current.length;
   $("#curNone").hidden = !!hasCur; $("#curSome").hidden = !hasCur;
   if (hasCur) {

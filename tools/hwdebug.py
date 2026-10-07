@@ -112,6 +112,10 @@ class RealHw:
             except Exception:  # noqa: BLE001
                 pass
         try:
+            info["i2c_hz"] = int.from_bytes(Path("/proc/device-tree/soc/i2c@7e804000/clock-frequency").read_bytes()[:4], "big")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             info["uptime_s"] = float(Path("/proc/uptime").read_text().split()[0])
         except Exception:  # noqa: BLE001
             pass
@@ -200,7 +204,7 @@ class MockHw:
 
     def power(self):
         return {"throttled": 0x0, "core_v": 1.2625, "temp_c": 40 + random.random(),
-                "uv_alarm": 0, "uptime_s": time.time() - self.t0 + 9000}
+                "uv_alarm": 0, "i2c_hz": 100000, "uptime_s": time.time() - self.t0 + 9000}
 
     def other_users(self):
         return []

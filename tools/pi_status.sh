@@ -9,7 +9,7 @@ git log --oneline -3
 
 line "I2C 설정 (/boot/firmware/config.txt)"
 grep -nE "i2c|baudrate|googlevoicehat" /boot/firmware/config.txt
-echo "현재 실제 I2C 속도: $(od -An -tu4 --endian=big /sys/class/i2c-adapter/i2c-1/of_node/clock-frequency 2>/dev/null | tr -d ' ' || echo '알 수 없음') Hz"
+echo "현재 실제 I2C 속도: $(od -An -tu4 --endian=big /proc/device-tree/soc/i2c@7e804000/clock-frequency 2>/dev/null | tr -d ' ' || echo '알 수 없음') Hz (BNO08x 는 10000 이하 권장)"
 ls -l /dev/i2c-1 2>&1
 
 line "I2C 스캔 (0x4b 또는 0x4a 가 보여야 함)"

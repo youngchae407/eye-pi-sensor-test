@@ -54,7 +54,7 @@ sudo reboot
 
 - `config.txt`에 추가 (`/boot/firmware/config.txt`, 구버전은 `/boot/config.txt`; 원본은 `.bak-eye-pi`로 백업)
   - `dtparam=i2c_arm=on` — I2C 켜기
-  - `dtparam=i2c_arm_baudrate=...` — I2C 속도 (BNO08x는 400000 권장이지만 Pi Zero에서는 100000 이하로 낮춰 시험 중)
+  - `dtparam=i2c_arm_baudrate=10000` — I2C 속도 10kHz. BNO08x는 클럭 스트레칭을 쓰는데 Pi의 하드웨어 I2C가 이를 제대로 처리하지 못해 속도를 낮춤 ([Adafruit 가이드](https://learn.adafruit.com/circuitpython-on-raspberrypi-linux/i2c-clock-stretching))
   - `dtoverlay=googlevoicehat-soundcard` — I2S 마이크 드라이버 (Adafruit 가이드 방식)
 - `i2c-dev` 모듈 로드, 사용자를 `i2c`/`audio`/`gpio` 그룹에 추가
 - 필요한 apt 패키지, `.venv` 가상환경, 파이썬 라이브러리 설치
@@ -136,7 +136,7 @@ python test_imu.py --address 0x4A --duration 20    # 주소/시간 지정
   1. 진단: 서버를 멈추고 `python tools/imu_diag.py` (RST 연결 시 `--reset-pin 24`) — 어떤 패킷이 오가는지 출력
   2. 센서 3V3를 뽑았다 꽂아 완전히 전원 리셋
   3. BNO086 **RST**를 Pi GPIO24(핀 18)에 연결하고 `python server.py --reset-pin 24` (하드웨어 리셋)
-  4. I2C 속도 바꾸기: `sudo bash tools/set_i2c_speed.sh 50000` 후 `sudo reboot` (100000 → 50000 → 10000 순서로)
+  4. I2C 속도 낮추기 (Adafruit 클럭 스트레칭 가이드): `sudo bash tools/set_i2c_speed.sh 10000` 후 `sudo reboot`. 그래도 안 되면 5000 → 1000
   5. SDA/SCL 선을 짧게, 점퍼 접촉 확인
 - Pi 상태를 한 번에 보기: `bash tools/pi_status.sh` (git, I2C 설정·스캔, 전원, 실행 중인 서버)
 - 배선/전원 실시간 진단 화면: Pi 에서 `python3 tools/hwdebug.py` → Mac 브라우저 `http://eye-pi-1.local:8081` (핀 레벨, 풀업 테스트, RST 리셋, 버스 복구, 멀티미터 기록과 원인 후보)

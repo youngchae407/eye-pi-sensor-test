@@ -47,6 +47,35 @@ def quiet_library():
     return lib
 
 
+# Pi 의 하드웨어 I2C(i2c-1) 실제 속도. config.txt 의 dtparam=i2c_arm_baudrate 가 재부팅 후 여기에 반영됨
+_I2C1_CLOCK = "/proc/device-tree/soc/i2c@7e804000/clock-frequency"
+RECOMMENDED_HZ = 10000  # Adafruit 클럭 스트레칭 가이드 권장값
+
+
+def i2c_bus_speed():
+    """현재 I2C 버스 속도(Hz). 읽을 수 없으면 None (Mac 등)."""
+    try:
+        with open(_I2C1_CLOCK, "rb") as f:
+            return int.from_bytes(f.read(4), "big")
+    except OSError:
+        return None
+
+
+def report_interval_us(n_features, hz=None):
+    """버스 속도에 맞춘 센서 보고 간격(µs). 느린 버스에서 보고가 밀려 쌓이지 않게 한다.
+
+    I2C 1바이트 ≈ 9클럭, 리포트 1개 ≈ 30바이트(라이브러리가 헤더를 두 번 읽음).
+    버스 용량의 절반만 쓰도록 잡는다. 100kHz 이상이면 라이브러리 기본값 50ms.
+    """
+    hz = hz or i2c_bus_speed()
+    if not hz:
+        return 50000
+    packets_per_s = hz / 9 / 30 * 0.5
+    per_feature_hz = max(1.0, packets_per_s / max(1, n_features))
+    interval = max(50000, int(1e6 / per_feature_hz))
+    return -(-interval // 10000) * 10000  # 10ms 단위로 올림
+
+
 def open_reset_pin(bcm):
     """RST 핀을 Pi의 GPIO(BCM 번호)에 연결했을 때 하드웨어 리셋용 핀을 만든다."""
     if bcm is None:
@@ -64,6 +93,14 @@ def bring_up(i2c, candidates, features, log, reset_pin=None, tries=5):
     """
     from adafruit_bno08x.i2c import BNO08X_I2C
 
+    hz = i2c_bus_speed()
+    interval = report_interval_us(len(features), hz)
+    if hz is not None:
+        if hz > RECOMMENDED_HZ:
+            log(f"I2C 속도 {hz}Hz: BNO08x 는 클럭 스트레칭 문제로 {RECOMMENDED_HZ}Hz 이하 권장 "
+                f"(sudo bash tools/set_i2c_speed.sh {RECOMMENDED_HZ} 후 재부팅)", "warn")
+        log(f"I2C 속도 {hz}Hz → 센서 보고 간격 {interval // 1000}ms", "info")
+
     last = None
     for addr in candidates:
         for attempt in range(1, tries + 1):
@@ -71,7 +108,7 @@ def bring_up(i2c, candidates, features, log, reset_pin=None, tries=5):
                 bno = BNO08X_I2C(i2c, reset=reset_pin, address=addr)
                 time.sleep(0.2)
                 for feature in features:
-                    bno.enable_feature(feature)
+                    bno.enable_feature(feature, interval)
                     time.sleep(0.05)
                 if skipped_packets:
                     log(f"IMU 명령 채널 메시지 {len(skipped_packets)}개 무시함 "
