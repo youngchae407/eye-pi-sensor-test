@@ -342,7 +342,7 @@ class Monitor:
                 verdict, level = "외부에서 LOW 로 붙잡혀 있음 (GND 에 닿았거나 센서가 끌어내림)", "err"
             elif up == "hi" and down == "hi":
                 verdict = ("정상: 보드의 풀업 저항이 HIGH 로 유지" if p in (2, 3)
-                           else "외부에서 HIGH (센서 보드 풀업/출력 → 보드에 전원이 있다는 근거)")
+                           else "외부에서 HIGH (센서 보드 풀업. 단 3V3 이 없어도 SDA/SCL 로 역전원돼 HIGH 일 수 있어 전원 증거로는 약함)")
                 level = "ok"
             elif up == "hi" and down == "lo":
                 verdict, level = "아무것도 연결 안 된 것처럼 떠 있음 (선 단선 또는 센서 전원 없음 의심)", "warn"
