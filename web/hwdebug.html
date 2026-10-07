@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eye-pi 하드웨어 진단</title>
+<style>
+:root{
+  --paper:#e8eee9; --panel:#f6f9f5; --ink:#14202a; --mute:#5b6a74; --line:#c3cec6;
+  --blue:#1d5fd1; --ok:#1d8a58; --warn:#c97a12; --err:#c3372e; --hi:#1d8a58; --lo:#9aa7af;
+  --term:#0f151b; --term-ink:#cfe3d6; --term-mute:#7f93a0;
+  --sans:"Avenir Next","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,"D2Coding",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.mute{color:var(--mute)}
+.top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.top b{font-size:16px}
+.top .facts{margin-left:auto;display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--mute)}
+.conn{display:inline-flex;align-items:center;gap:7px}
+.conn i{width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.conn.live i{background:var(--ok);box-shadow:0 0 0 4px rgba(29,138,88,.16)}
+.conn.down i{background:var(--err)}
+.banner{margin:12px 20px 0;padding:10px 14px;border-radius:8px;border:1px solid #ecd0a1;background:#faedd8;color:#6d4a07}
+main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;padding:16px 20px 24px}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{margin:0 0 4px;font-size:15px}
+.card .lead{margin:0 0 12px;color:var(--mute);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:1px 9px;border-radius:999px;border:1px solid;font-size:12px;white-space:nowrap}
+.chip i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.ok{color:var(--ok);background:#e2f2e9;border-color:#b7dcc7}
+.chip.warn{color:var(--warn);background:#faedd8;border-color:#ecd0a1}
+.chip.err{color:var(--err);background:#f9e1de;border-color:#e9b8b3}
+.chip.idle{color:var(--mute);background:#e9eeea;border-color:var(--line)}
+
+/* 핀 */
+.pins{width:100%;border-collapse:collapse}
+.pins th{font-weight:500;color:var(--mute);font-size:12px;text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+.pins td{padding:7px 6px;border-bottom:1px solid #dde5df;vertical-align:middle}
+.pins tr:last-child td{border-bottom:0}
+.pins .grp td{padding-top:12px;color:var(--mute);font-size:12px;border-bottom:0}
+.lvl{display:inline-block;min-width:46px;text-align:center;padding:2px 0;border-radius:5px;font:600 12px var(--mono);color:#fff}
+.lvl.hi{background:var(--hi)} .lvl.lo{background:var(--lo)} .lvl.na{background:#c9d1cc}
+.pins canvas{width:100%;height:22px;display:block}
+.expect{font-size:12px}
+
+/* 진단 */
+.hyp{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfdfb}
+.hyp:last-child{margin-bottom:0}
+.hyp .h{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.hyp .h b{font-weight:600}
+.hyp ul{margin:6px 0 0;padding-left:18px;font-size:13px}
+.hyp li.for::marker{content:"＋ ";color:var(--err)}
+.hyp li.against::marker{content:"－ ";color:var(--ok)}
+.hyp li.todo::marker{content:"? ";color:var(--mute)}
+.hyp .next{margin-top:6px;font-size:12.5px;color:var(--mute)}
+
+/* 전원, 전류 */
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px}
+.kv dt{color:var(--mute)} .kv dd{margin:0}
+.big{font:600 28px var(--mono)}
+#curChart{width:100%;height:120px;display:block;margin-top:6px}
+
+/* 실험 */
+.acts{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.act{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfdfb}
+.act p{margin:0;font-size:12.5px;color:var(--mute)}
+.btn{align-self:flex-start;padding:6px 12px;border-radius:6px;border:1px solid #9fb2a6;background:#fff;cursor:pointer}
+.btn:hover{background:#eef4ef}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+
+/* 측정 */
+.meas{width:100%;border-collapse:collapse;font-size:13px}
+.meas td{padding:7px 4px;border-bottom:1px solid #dde5df;vertical-align:top}
+.meas tr:last-child td{border-bottom:0}
+.meas input,.meas select{width:92px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:#fff}
+.meas .how{color:var(--mute);font-size:12px}
+.meas .res{font-size:12px}
+
+/* 로그 */
+.log{background:var(--term);color:var(--term-ink);border-radius:10px;padding:10px 14px;font:12.5px/1.6 var(--mono);height:220px;overflow:auto}
+.log .t{color:var(--term-mute);margin-right:8px}
+.log .warn{color:#f0c27a} .log .err{color:#ff958c} .log .ok{color:#8fdcae}
+
+@media (max-width:900px){main{grid-template-columns:1fr;padding:12px 16px}.top{padding:10px 16px}.banner{margin:12px 16px 0}}
+</style>
+</head>
+<body>
+<header class="top">
+  <b>eye-pi 하드웨어 진단</b>
+  <span class="conn" id="conn"><i></i><span>연결 중…</span></span>
+  <div class="facts"><span id="model">-</span><span>가동 <b class="num" id="uptime">-</b></span></div>
+</header>
+<div class="banner" id="usersBanner" hidden></div>
+<div class="banner" id="mockBanner" hidden>가짜 하드웨어(mock)로 동작 중입니다. 실제 값이 아닙니다.</div>
+
+<main>
+  <div class="col">
+    <section class="card">
+      <h2>핀 상태 (실시간)</h2>
+      <p class="lead">Pi 핀의 실제 전압 레벨입니다. HIGH = 약 3.3V, LOW = 약 0V. 오른쪽 띠는 최근 60초 기록(초록=HIGH).</p>
+      <table class="pins">
+        <thead><tr><th>신호</th><th>Pi 핀</th><th>모드</th><th>레벨</th><th style="width:34%">최근 60초</th><th>정상일 때</th></tr></thead>
+        <tbody id="pinRows"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>실험</h2>
+      <p class="lead">버튼을 누르면 Pi 가 핀을 잠깐 바꿔 보고 원래대로 되돌립니다. 결과는 아래 로그와 원인 후보에 반영됩니다. 실험 전에는 대시보드(server.py)를 멈추세요.</p>
+      <div class="acts">
+        <div class="act"><b>① 누가 선을 붙잡고 있나</b><p>각 핀에 Pi 내부 풀업·풀다운을 번갈아 걸어, 선이 따라 움직이는지(떠 있음) 외부에서 고정돼 있는지 봅니다.</p><button class="btn primary" data-act="pulltest">풀 테스트</button></div>
+        <div class="act"><b>② I2C 주소 검색</b><p>센서(0x4B/0x4A)와 전류 센서(INA219, 0x40~0x45)가 응답하는지 확인합니다.</p><button class="btn" data-act="scan">검색</button></div>
+        <div class="act"><b>③ RST 리셋</b><p>IMU RST(핀18)를 50ms 동안 LOW 로. 멈춘 센서가 선을 놓아주면 SDA/SCL 이 HIGH 로 바뀝니다.</p><button class="btn" data-act="reset">리셋 펄스</button></div>
+        <div class="act"><b>④ I2C 버스 복구</b><p>SCL 을 9번 흔들고 STOP 신호를 보냅니다. 센서가 SDA 만 붙잡고 있을 때 효과가 있습니다.</p><button class="btn" data-act="recover">버스 복구</button></div>
+        <div class="act"><b>핀 원래대로</b><p>실험 중 오류가 났을 때 SDA/SCL 을 I2C 로, RST/INT 를 입력으로 되돌립니다.</p><button class="btn" data-act="restore">복원</button></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>멀티미터 측정 기록</h2>
+      <p class="lead">Pi 로는 전압·전류를 직접 잴 수 없는 곳입니다. 멀티미터로 재서 입력하면 해석해 드려요. 입력값은 이 브라우저에만 저장됩니다.</p>
+      <table class="meas" id="measTable"></table>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <h2>원인 후보</h2>
+      <p class="lead">지금까지의 증거로 정렬했습니다. <span style="color:var(--err)">＋</span> 이 후보를 지지, <span style="color:var(--ok)">－</span> 반대, <span>?</span> 아직 모름.</p>
+      <div id="hyps"></div>
+    </section>
+
+    <section class="card">
+      <h2>IMU 전류</h2>
+      <div id="curNone">
+        <p class="lead" style="margin-bottom:6px">전류 센서가 없어 실시간 전류를 읽을 수 없습니다 (Pi Zero 는 3.3V 레일 전류를 측정하는 회로가 없음).</p>
+        <p class="mute" style="margin:0;font-size:12.5px">방법 ① 멀티미터를 mA 모드로 Pi 핀17 ↔ IMU 3V3 선 사이에 직렬로 끼우고 왼쪽 표에 입력.<br>
+        방법 ② INA219 모듈: Pi 3V3 → INA Vin+, INA Vin− → IMU 3V3, INA VCC/GND/SDA/SCL 은 Pi 에 연결 후 ② 검색. (I2C 선이 붙잡혀 있으면 INA219 도 읽을 수 없습니다)</p>
+      </div>
+      <div id="curSome" hidden>
+        <div style="display:flex;align-items:baseline;gap:14px"><span class="big" id="curNow">-</span><span class="mute">mA</span><span class="mute num" id="curV"></span><span class="mute num" id="curAddr"></span></div>
+        <canvas id="curChart"></canvas>
+        <p class="mute" style="margin:4px 0 0;font-size:12px">BNO086 은 동작 중 보통 수~수십 mA (보드 LED 포함). 0 에 가까우면 전원 경로 단선, 100mA 이상이면 단락 의심.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Pi 전원</h2>
+      <dl class="kv">
+        <dt>저전압/스로틀</dt><dd id="thr">-</dd>
+        <dt>코어 전압</dt><dd class="num" id="corev">-</dd>
+        <dt>CPU 온도</dt><dd class="num" id="temp">-</dd>
+      </dl>
+      <p class="mute" style="margin:8px 0 0;font-size:12px">Pi 입력 전원(5V)이 약하면 '저전압'이 뜹니다. 3.3V 핀에 연결된 센서 전류는 여기서 보이지 않습니다.</p>
+    </section>
+  </div>
+
+  <section class="card" style="grid-column:1/-1">
+    <h2 style="margin-bottom:8px">로그</h2>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const PIN_ORDER = [[2,3,24,17],[18,19,20]];
+const EXPECT = {2:"HIGH (쉴 때)",3:"HIGH (쉴 때)",24:"HIGH",17:"HIGH (센서 동작 시)",18:"깜빡임 (녹음 중)",19:"깜빡임 (녹음 중)",20:"깜빡임 (녹음 중)"};
+const FUNC = {a0:"I2C/I2S",ip:"입력",op:"출력",no:"꺼짐"};
+let S = null, pull = null, scan = null, resetRes = null;
+
+// ---- 측정 기록 (localStorage 는 편의용) -------------------------------
+const MEAS = [
+  {k:"led", label:"IMU 보드 PWR LED", how:"Pi 전원이 켜진 상태에서 눈으로 확인", type:"select", opts:["모름","켜짐","꺼짐"]},
+  {k:"v_pi", label:"Pi 3.3V 전압", how:"전원 켬. 빨간 프로브 → Pi 핀17(또는 1), 검정 → 핀14. V(DC) 모드", unit:"V"},
+  {k:"v_imu", label:"IMU 보드 3V3 전압", how:"전원 켬. 빨간 프로브 → IMU 보드 3V3 패드(선 말고 보드 쪽), 검정 → IMU GND 패드", unit:"V"},
+  {k:"v_gnd", label:"GND 사이 전압", how:"전원 켬. Pi 핀14 ↔ IMU 보드 GND 패드. 0V 가 정상", unit:"V"},
+  {k:"r_short", label:"IMU 3V3–GND 저항", how:"Pi 전원 끄고 IMU 선 모두 뺀 뒤, IMU 보드 3V3 ↔ GND. Ω 모드", unit:"Ω"},
+  {k:"i_imu", label:"IMU 전류", how:"멀티미터 mA 모드, Pi 핀17 ↔ IMU 3V3 사이에 직렬로", unit:"mA"},
+];
+let M = {};
+try { M = JSON.parse(localStorage.getItem("hwdebug.meas") || "{}"); } catch (e) { M = {}; }
+const num = (k) => (M[k] === undefined || M[k] === "" || isNaN(+M[k])) ? null : +M[k];
+function saveM(){ try { localStorage.setItem("hwdebug.meas", JSON.stringify(M)); } catch (e) {} }
+
+function measVerdict(k){
+  const v = M[k], n = num(k);
+  if (k === "led") return v === "켜짐" ? ["ok","전원 들어옴"] : v === "꺼짐" ? ["err","전원 경로 의심 (LED 점퍼가 잘린 보드면 예외)"] : null;
+  if (n === null) return null;
+  if (k === "v_pi") return n >= 3.2 && n <= 3.45 ? ["ok","정상"] : ["err","Pi 3.3V 이상 — 다른 장치 단락 의심"];
+  if (k === "v_imu") return n >= 3.1 ? ["ok","보드까지 전원 도착"] : n < 0.5 ? ["err","전원이 보드에 안 옴 (선·헤더 납땜·핀 위치)"] : ["err","전압이 낮음 — 단락/과부하 또는 접촉 저항"];
+  if (k === "v_gnd") return n < 0.1 ? ["ok","GND 연결 정상"] : ["err","GND 끊김/접촉 불량"];
+  if (k === "r_short") return n < 10 ? ["err","3V3–GND 단락! 보드 손상 가능성 높음"] : n < 200 ? ["warn","낮은 편 — 단락 직전/부품 손상 의심"] : ["ok","단락 아님"];
+  if (k === "i_imu") return n < 0.5 ? ["err","전류 없음 — 전원 경로 끊김"] : n > 100 ? ["err","과전류 — 단락"] : n > 40 ? ["warn","높은 편"] : ["ok","정상 범위"];
+  return null;
+}
+
+function renderMeas(){
+  $("#measTable").innerHTML = MEAS.map(m => {
+    const input = m.type === "select"
+      ? `<select data-k="${m.k}">${m.opts.map(o => `<option${M[m.k]===o?" selected":""}>${o}</option>`).join("")}</select>`
+      : `<input data-k="${m.k}" inputmode="decimal" placeholder="${m.unit}" value="${M[m.k] ?? ""}">`;
+    const v = measVerdict(m.k);
+    return `<tr><td style="width:34%"><b>${m.label}</b><div class="how">${m.how}</div></td><td>${input}</td>
+      <td class="res" data-res="${m.k}">${v ? `<span class="chip ${v[0]}"><i></i>${v[1]}</span>` : ""}</td></tr>`;
+  }).join("");
+  document.querySelectorAll("#measTable [data-k]").forEach(el => el.addEventListener("input", () => {
+    M[el.dataset.k] = el.value; saveM();
+    const v = measVerdict(el.dataset.k), cell = document.querySelector(`[data-res="${el.dataset.k}"]`);
+    cell.innerHTML = v ? `<span class="chip ${v[0]}"><i></i>${v[1]}</span>` : "";
+    renderHyps();
+  }));
+}
+
+// ---- 원인 후보 -------------------------------------------------------
+function pinLvl(p){ return S && S.pins[p] ? S.pins[p].level : null; }
+function pullOf(p){ return pull ? pull.find(r => r.pin === p) : null; }
+
+function renderHyps(){
+  const sdaLo = pinLvl(2) === "lo", sclLo = pinLvl(3) === "lo", busLo = sdaLo || sclLo;
+  const busHi = pinLvl(2) === "hi" && pinLvl(3) === "hi";
+  const pS = pullOf(2), pC = pullOf(3), pR = pullOf(24), pI = pullOf(17);
+  const heldLo = pS && pC && ((pS.pullup === "lo") || (pC.pullup === "lo"));
+  const rstExtHi = pR && pR.pullup === "hi" && pR.pulldown === "hi";
+  const rstFloat = pR && pR.pullup === "hi" && pR.pulldown === "lo";
+  const led = M.led, vI = num("v_imu"), r = num("r_short"), i = num("i_imu"), vg = num("v_gnd");
+  const found = scan ? scan.found : null;
+  const sensorSeen = found && (found.includes("0x4b") || found.includes("0x4a"));
+  const resetFreed = resetRes && resetRes.sda === "hi" && resetRes.scl === "hi";
+
+  const H = [];
+  const add = (title, ev, next) => {
+    const score = ev.reduce((a, e) => a + (e[0] === "for" ? (e[2] || 1) : e[0] === "against" ? -(e[2] || 1) : 0), 0);
+    H.push({title, ev, next, score});
+  };
+
+  add("IMU 보드에 3.3V 가 도달하지 않음 (선 단선, 헤더 납땜/접촉 불량, 잘못된 패드)", [
+    led === "꺼짐" ? ["for","PWR LED 꺼짐 — 소프트웨어와 무관한 하드웨어 증상", 2] : led === "켜짐" ? ["against","PWR LED 켜짐", 3] : ["todo","PWR LED 상태 미입력"],
+    busLo ? ["for","SDA/SCL 이 LOW: 전원 없는 칩은 보호 다이오드로 선을 끌어내릴 수 있음"] : busHi ? ["against","SDA/SCL 정상 HIGH"] : ["todo","핀 상태 대기"],
+    rstExtHi ? ["against","RST 가 외부에서 HIGH (보드 풀업이 살아 있음 → 보드에 전압이 있다는 근거)", 2] : rstFloat ? ["for","RST 가 떠 있음 (보드 풀업 전원이 없음)", 2] : ["todo","① 풀 테스트로 RST 확인"],
+    vI === null ? ["todo","IMU 보드 3V3 전압 미측정 (결정적인 측정)"] : vI < 0.5 ? ["for",`보드 3V3 = ${vI}V`, 4] : vI >= 3.1 ? ["against",`보드 3V3 = ${vI}V 정상`, 4] : ["for",`보드 3V3 = ${vI}V (낮음)`, 1],
+    i === null ? ["todo","전류 미측정"] : i < 0.5 ? ["for",`전류 ${i}mA (없음)`, 3] : ["against",`전류 ${i}mA 흐름`, 2],
+  ], "멀티미터로 IMU 보드 쪽 3V3–GND 전압을 재세요. SparkFun 보드는 헤더 핀이 납땜 안 된 채 판매되므로, 점퍼선을 구멍에 꽂기만 했다면 접촉이 안 될 수 있습니다.");
+
+  add("IMU 보드 손상 / 3V3–GND 단락", [
+    led === "꺼짐" ? ["for","PWR LED 꺼짐"] : led === "켜짐" ? ["against","PWR LED 켜짐", 2] : ["todo","PWR LED 상태 미입력"],
+    r === null ? ["todo","전원 끈 상태 3V3–GND 저항 미측정"] : r < 10 ? ["for",`저항 ${r}Ω (단락)`, 4] : ["against",`저항 ${r}Ω`, 2],
+    vI !== null && vI > 0.5 && vI < 3.0 ? ["for",`보드 전압 ${vI}V — 무언가 전류를 많이 먹음`, 2] : ["todo","보드 전압으로 판단 보류"],
+    i !== null && i > 100 ? ["for",`과전류 ${i}mA`, 3] : ["todo","전류로 판단 보류"],
+    ["for","예전부터 같은 오류가 반복되다 센서가 사라짐 — 손상 진행 가능성 (추측)", 0.5],
+    ["todo","IMU 연결 후 Pi 의 Wi-Fi/SSH 가 불안정해짐 — 3.3V 과부하 때 나타날 수 있음 (추측). IMU 3V3 선을 빼면 안정되는지 확인"],
+  ], "Pi 3.3V 를 그대로 단락시키면 Pi 가 재부팅될 수 있습니다. 전원 끈 상태에서 저항부터 재세요. 과거에 5V 에 연결하거나 3V3/GND 를 바꿔 꽂은 적이 있는지 떠올려 보세요.");
+
+  add("센서가 전원은 있지만 멈춘 채 I2C 선을 붙잡음", [
+    heldLo ? ["for","풀 테스트: 풀업을 걸어도 LOW (외부에서 붙잡음)", 2] : pS ? ["against","풀 테스트: 선이 외부에서 고정돼 있지 않음", 2] : ["todo","① 풀 테스트 필요"],
+    rstExtHi ? ["for","RST 외부 HIGH — 보드에 전원 있음", 2] : rstFloat ? ["against","RST 떠 있음 — 전원 없어 보임", 2] : ["todo","RST 상태 미확인"],
+    led === "꺼짐" ? ["against","PWR LED 꺼짐 (LED 점퍼가 잘렸다면 무시)", 2] : ["todo","LED"],
+    resetFreed ? ["for","RST 리셋 후 선이 풀림 — 거의 확정", 4] : resetRes ? ["against","RST 리셋해도 선이 그대로", 1] : ["todo","③ RST 리셋 필요"],
+  ], "③ RST 리셋 → 안 풀리면 ④ 버스 복구 → 그래도 안 되면 Pi 전원을 완전히 뽑았다 꽂기.");
+
+  add("SDA/SCL 선이 GND 에 닿았거나 엉뚱한 패드에 꽂힘", [
+    heldLo ? ["for","선이 외부에서 LOW 로 고정", 1] : ["todo","① 풀 테스트 필요"],
+    vg !== null && vg >= 0.1 ? ["for","GND 연결도 불안정", 1] : ["todo","핀 위치는 사진으로 확인 필요"],
+    sensorSeen ? ["against","센서가 I2C 에 응답함", 3] : ["todo","② 검색"],
+  ], "IMU 선을 Pi 에서 모두 뽑은 상태로 이 화면을 보세요. SDA/SCL 이 HIGH 로 바뀌면 Pi 쪽은 정상이고 문제는 센서/선 쪽입니다.");
+
+  add("PWR LED 만 문제 (LED 점퍼 절단·LED 불량) — 센서는 정상", [
+    led === "꺼짐" && vI !== null && vI >= 3.1 ? ["for","LED 꺼졌지만 보드 전압 정상", 3] : ["todo","보드 전압 측정 필요"],
+    sensorSeen ? ["for","센서가 I2C 에 응답", 2] : busLo ? ["against","I2C 선이 LOW 라 통신 불가", 2] : ["todo","② 검색"],
+  ], "보드 뒷면의 LED 점퍼(패드 사이 선)가 잘려 있는지 확인하세요.");
+
+  add("Pi 쪽 문제 (I2C 핀/컨트롤러)", [
+    ["against","마이크는 정상 동작 — Pi 3.3V·GND·GPIO 전반은 살아 있음", 1],
+    S && S.throttle_flags && S.throttle_flags.length ? ["for","Pi 전원 경고: " + S.throttle_flags.join(", "), 2] : ["against","Pi 저전압 경고 없음", 1],
+    ["todo","IMU 선을 뺐을 때도 SDA/SCL 이 LOW 면 Pi 쪽"],
+  ], "IMU 의 SDA/SCL 선을 Pi 에서 뽑고 핀 상태를 보세요 (Pi 보드에 1.8kΩ 풀업이 있어 HIGH 가 정상).");
+
+  add("소프트웨어 문제", [
+    ["against","PWR LED 는 소프트웨어가 켜고 끄는 게 아님 (3.3V → 저항 → LED 직결)", 4],
+    ["against","핀 상태는 커널이 실제 전압을 읽은 값", 2],
+    ["for","예전 'Unprocessable Batch bytes' 는 라이브러리 버그가 실제로 있었음 (패치 완료, 실기 검증 전)", 0.5],
+  ], "하드웨어 문제가 해결된 뒤 test_imu.py 로 패치를 검증합니다.");
+
+  H.sort((a, b) => b.score - a.score);
+  $("#hyps").innerHTML = H.map((h, idx) => {
+    const cls = h.score >= 3 ? "err" : h.score >= 1 ? "warn" : "idle";
+    const tag = h.score >= 3 ? "유력" : h.score >= 1 ? "가능" : h.score <= -2 ? "가능성 낮음" : "판단 보류";
+    return `<div class="hyp"><div class="h"><b>${idx + 1}. ${h.title}</b><span class="chip ${cls}"><i></i>${tag}</span></div>
+      <ul>${h.ev.map(e => `<li class="${e[0]}">${e[1]}</li>`).join("")}</ul><div class="next">다음 확인: ${h.next}</div></div>`;
+  }).join("");
+}
+
+// ---- 핀 / 전원 / 전류 렌더 ---------------------------------------------
+function buildPins(){
+  const groups = [["IMU (BNO086)", PIN_ORDER[0]], ["마이크 (I2S)", PIN_ORDER[1]]];
+  $("#pinRows").innerHTML = groups.map(([g, list]) =>
+    `<tr class="grp"><td colspan="6">${g}</td></tr>` + list.map(p =>
+      `<tr><td id="n${p}">-</td><td class="num">핀 <span id="ph${p}">-</span> <span class="mute">(GPIO${p})</span></td>
+       <td id="f${p}" class="mute">-</td><td><span class="lvl na" id="l${p}">-</span></td>
+       <td><canvas id="c${p}"></canvas></td><td class="expect mute">${EXPECT[p]}</td></tr>`).join("")).join("");
+}
+
+function drawStrip(cv, data){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  g.fillStyle = "#e3e9e4"; g.fillRect(0, 0, w, h);
+  const n = 240, bw = w / n, off = n - data.length;
+  data.forEach((v, i) => { g.fillStyle = v ? "#1d8a58" : "#b8c2c8"; g.fillRect((off + i) * bw, v ? 2 : h - 6, Math.ceil(bw), v ? h - 4 : 4); });
+}
+
+function drawCurrent(cv, pts){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  if (!pts.length) return;
+  const ys = pts.map(p => p[1]), max = Math.max(20, ...ys) * 1.15, min = Math.min(0, ...ys);
+  g.strokeStyle = "#d4ddd6"; g.lineWidth = 1; g.fillStyle = "#5b6a74"; g.font = "11px ui-monospace,monospace";
+  [0, .5, 1].forEach(f => { const y = h - 14 - f * (h - 24); g.beginPath(); g.moveTo(34, y); g.lineTo(w, y); g.stroke(); g.fillText((min + f * (max - min)).toFixed(0), 0, y + 4); });
+  g.strokeStyle = "#1d5fd1"; g.lineWidth = 2; g.beginPath();
+  pts.forEach((p, i) => { const x = 34 + (w - 34) * (i / 239), y = h - 14 - (p[1] - min) / (max - min) * (h - 24); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.stroke();
+}
+
+function fmtUp(s){ if (!s) return "-"; const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h}시간 ${m}분` : `${m}분`; }
+function hhmmss(t){ const d = new Date(t * 1000); return d.toTimeString().slice(0, 8); }
+
+function render(){
+  if (!S) return;
+  $("#model").textContent = S.model; $("#uptime").textContent = fmtUp(S.power.uptime_s);
+  $("#mockBanner").hidden = !S.mock;
+  const ub = $("#usersBanner");
+  ub.hidden = !S.users.length;
+  if (S.users.length) ub.innerHTML = "센서를 쓰는 다른 프로그램이 실행 중입니다. 실험 결과가 섞일 수 있어요:<br><span class='num' style='font-size:12px'>" + S.users.map(u => u.replace(/</g, "&lt;")).join("<br>") + "</span>";
+  for (const k in S.pins) {
+    const p = S.pins[k];
+    $("#n" + k).textContent = p.name; $("#ph" + k).textContent = p.phys;
+    $("#f" + k).textContent = (FUNC[p.func] || p.func) + (p.pull && p.pull !== "--" && p.pull !== "pn" ? " · " + (p.pull === "pu" ? "풀업" : "풀다운") : "");
+    const l = $("#l" + k); l.className = "lvl " + p.level; l.textContent = p.level.toUpperCase();
+    drawStrip($("#c" + k), S.history[k] || []);
+  }
+  const pw = S.power;
+  $("#thr").innerHTML = pw.throttled === undefined ? "-" : (S.throttle_flags.length
+    ? S.throttle_flags.map(f => `<span class="chip ${f.startsWith("지금") ? "err" : "warn"}"><i></i>${f}</span>`).join(" ")
+    : `<span class="chip ok"><i></i>없음 (0x${pw.throttled.toString(16)})</span>`);
+  $("#corev").textContent = pw.core_v ? pw.core_v.toFixed(4) + " V" : "-";
+  $("#temp").textContent = pw.temp_c ? pw.temp_c.toFixed(1) + " °C" : "-";
+  const hasCur = S.ina_addr !== null && S.current.length;
+  $("#curNone").hidden = !!hasCur; $("#curSome").hidden = !hasCur;
+  if (hasCur) {
+    const last = S.current[S.current.length - 1];
+    $("#curNow").textContent = last[1].toFixed(1); $("#curV").textContent = last[2].toFixed(3) + " V";
+    $("#curAddr").textContent = "INA219 " + "0x" + S.ina_addr.toString(16) + " · 션트 " + S.shunt + "Ω";
+    drawCurrent($("#curChart"), S.current);
+  }
+  const log = $("#log"), stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.innerHTML = S.log.map(e => `<div class="${e.level}"><span class="t">${hhmmss(e.t)}</span>${e.msg.replace(/</g, "&lt;")}</div>`).join("");
+  if (stick) log.scrollTop = log.scrollHeight;
+  document.querySelectorAll("[data-act]").forEach(b => b.disabled = !!S.busy);
+  renderHyps();
+}
+
+// ---- 연결 -------------------------------------------------------------
+function connect(){
+  const c = $("#conn"), es = new EventSource("/api/stream");
+  es.onopen = () => { c.className = "conn live"; c.lastChild.textContent = "실시간"; };
+  es.onmessage = (ev) => { S = JSON.parse(ev.data); render(); };
+  es.onerror = () => { c.className = "conn down"; c.lastChild.textContent = "끊김 — 재연결 중"; };
+}
+document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", async () => {
+  const name = b.dataset.act; b.disabled = true;
+  try {
+    const r = await (await fetch("/api/action/" + name, {method: "POST"})).json();
+    if (name === "pulltest" && r.results) pull = r.results;
+    if (name === "scan" && r.found) scan = r;
+    if (name === "reset" && r.ok) resetRes = r;
+    renderHyps();
+  } catch (e) { /* 로그에 서버 쪽 오류가 남음 */ }
+  b.disabled = false;
+}));
+buildPins(); renderMeas(); renderHyps(); connect();
+</script>
+</body>
+</html>

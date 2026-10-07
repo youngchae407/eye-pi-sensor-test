@@ -13,7 +13,7 @@ echo "현재 실제 I2C 속도: $(od -An -tu4 --endian=big /sys/class/i2c-adapte
 ls -l /dev/i2c-1 2>&1
 
 line "I2C 스캔 (0x4b 또는 0x4a 가 보여야 함)"
-i2cdetect -y 1 2>&1
+/usr/sbin/i2cdetect -y 1 2>&1
 
 line "전원 / 가동 시간"
 uptime

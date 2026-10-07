@@ -139,6 +139,7 @@ python test_imu.py --address 0x4A --duration 20    # 주소/시간 지정
   4. I2C 속도 바꾸기: `sudo bash tools/set_i2c_speed.sh 50000` 후 `sudo reboot` (100000 → 50000 → 10000 순서로)
   5. SDA/SCL 선을 짧게, 점퍼 접촉 확인
 - Pi 상태를 한 번에 보기: `bash tools/pi_status.sh` (git, I2C 설정·스캔, 전원, 실행 중인 서버)
+- 배선/전원 실시간 진단 화면: Pi 에서 `python3 tools/hwdebug.py` → Mac 브라우저 `http://eye-pi-1.local:8081` (핀 레벨, 풀업 테스트, RST 리셋, 버스 복구, 멀티미터 기록과 원인 후보)
 - 가속도 크기가 9.8에서 크게 벗어남 → 테스트 중 보드를 움직이고 있지 않은지 확인
 
 **대시보드**
